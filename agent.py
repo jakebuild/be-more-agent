@@ -81,7 +81,8 @@ DEFAULT_CONFIG = {
     "camera_rotation": 0,
     "system_prompt_extras": "",
     "input_device": None,
-    "input_sample_rate": None
+    "input_sample_rate": None,
+    "wake_word_enabled": True
 }
 
 # LLM SETTINGS
@@ -112,6 +113,8 @@ def load_config():
         config["openclaw"]["model"] = os.getenv("OPENCLAW_MODEL")
     if os.getenv("BRAIN_TYPE"):
         config["brain_type"] = os.getenv("BRAIN_TYPE")
+    if os.getenv("WAKE_WORD_ENABLED"):
+        config["wake_word_enabled"] = os.getenv("WAKE_WORD_ENABLED").lower() == "true"
         
     return config
 
@@ -280,7 +283,7 @@ class BotGUI:
         # --- WAKE WORD INITIALIZATION ---
         print("[INIT] Loading Wake Word...", flush=True)
         self.oww_model = None
-        if not TEXT_ONLY_MODE:
+        if not TEXT_ONLY_MODE and CURRENT_CONFIG.get("wake_word_enabled", True):
             print("[INIT] Loading AI Engines...", flush=True)
             global openwakeword, Model
             try:
@@ -302,6 +305,11 @@ class BotGUI:
                         print(f"[CRITICAL] Failed to load model: {e}")
                 except Exception as e:
                     print(f"[CRITICAL] Failed to load model: {e}")
+                except:
+                    # Catching library-level crashes (C++ assertions) is hard, 
+                    # but we'll try to keep going if it returns at all.
+                    print("[CRITICAL] Wake Word engine crashed during init. Falling back to PTT mode.", flush=True)
+                    self.oww_model = None
             else:
                 print(f"[CRITICAL] Model not found: {WAKE_WORD_MODEL}")
         else:
