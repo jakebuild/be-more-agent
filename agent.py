@@ -561,12 +561,15 @@ class BotGUI:
     def telegram_listener_loop(self):
         token = CURRENT_CONFIG["telegram"].get("bot_token")
         chat_id = CURRENT_CONFIG["telegram"].get("channel_id")
-        if not token or not chat_id:
-            print("[TELEGRAM ERROR] Listener thread stopping: Missing config.", flush=True)
+        if not token:
+            print("[TELEGRAM ERROR] Listener thread stopping: Missing Bot Token.", flush=True)
             return
 
         last_update_id = 0
-        print(f"[TELEGRAM] Monitoring channel {chat_id}...", flush=True)
+        if chat_id:
+            print(f"[TELEGRAM] Monitoring channel {chat_id}...", flush=True)
+        else:
+            print("[TELEGRAM] Monitoring for ANY message to find Channel ID...", flush=True)
         
         while not self.exiting:
             try:
