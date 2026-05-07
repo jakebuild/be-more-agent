@@ -647,9 +647,15 @@ class BotGUI:
         if self.oww_model: self.oww_model.reset()
 
         if self.oww_model is None:
-            self.ptt_event.wait()
-            self.ptt_event.clear()
-            return "PTT"
+            if not hasattr(self.master, 'tk'):
+                # Headless CLI PTT
+                input("\n[PTT] Press ENTER to start speaking...")
+                return "PTT"
+            else:
+                # GUI PTT: Wait for button/key event
+                self.ptt_event.wait()
+                self.ptt_event.clear()
+                return "PTT"
 
         CHUNK_SIZE = 1280
         OWW_SAMPLE_RATE = 16000
