@@ -83,7 +83,12 @@ DEFAULT_CONFIG = {
     "input_device": None,
     "output_device": None,
     "input_sample_rate": None,
-    "wake_word_enabled": True
+    "wake_word_enabled": True,
+    "transporter": "local",
+    "telegram": {
+        "bot_token": None,
+        "channel_id": None
+    }
 }
 
 # LLM SETTINGS
@@ -120,6 +125,12 @@ def load_config():
         config["input_device"] = os.getenv("INPUT_DEVICE")
     if os.getenv("OUTPUT_DEVICE"):
         config["output_device"] = os.getenv("OUTPUT_DEVICE")
+    if os.getenv("TELEGRAM_BOT_TOKEN"):
+        config["telegram"]["bot_token"] = os.getenv("TELEGRAM_BOT_TOKEN")
+    if os.getenv("TELEGRAM_CHANNEL_ID"):
+        config["telegram"]["channel_id"] = os.getenv("TELEGRAM_CHANNEL_ID")
+    if os.getenv("TRANSPORTER"):
+        config["transporter"] = os.getenv("TRANSPORTER")
         
     return config
 
@@ -316,6 +327,13 @@ class BotGUI:
         self.current_audio_process = None 
         self.exiting = False
         
+        # Telegram Transporter State
+        self.telegram_response_event = threading.Event()
+        self.latest_telegram_response = ""
+        self.telegram_thread = None
+        if CURRENT_CONFIG.get("transporter") == "telegram":
+            self.start_telegram_listener()
+        
         # --- WAKE WORD INITIALIZATION ---
         print("[INIT] Loading Wake Word...", flush=True)
         self.oww_model = None
@@ -498,6 +516,89 @@ class BotGUI:
         speed = 50 if self.current_state == BotStates.SPEAKING else 500
         self.master.after(speed, self.update_animation)
 
+    def start_telegram_listener(self):
+        if not self.telegram_thread or not self.telegram_thread.is_alive():
+            print("[TELEGRAM] Starting Listener Thread...", flush=True)
+            self.telegram_thread = threading.Thread(target=self.telegram_listener_loop, daemon=True)
+            self.telegram_thread.start()
+
+    def send_voice_to_telegram(self, file_path):
+        token = CURRENT_CONFIG["telegram"].get("bot_token")
+        chat_id = CURRENT_CONFIG["telegram"].get("channel_id")
+        if not token or not chat_id:
+            print("[TELEGRAM ERROR] Bot Token or Chat ID missing!", flush=True)
+            return False
+            
+        url = f"https://api.telegram.org/bot{token}/sendVoice"
+        try:
+            with open(file_path, 'rb') as f:
+                files = {'voice': f}
+                data = {'chat_id': chat_id}
+                response = requests.post(url, files=files, data=data, timeout=15)
+                response.raise_for_status()
+                return True
+        except Exception as e:
+            print(f"[TELEGRAM ERROR] Failed to send voice: {e}", flush=True)
+            return False
+
+    def send_text_to_telegram(self, text):
+        token = CURRENT_CONFIG["telegram"].get("bot_token")
+        chat_id = CURRENT_CONFIG["telegram"].get("channel_id")
+        if not token or not chat_id:
+            print("[TELEGRAM ERROR] Bot Token or Chat ID missing!", flush=True)
+            return False
+            
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        try:
+            data = {'chat_id': chat_id, 'text': text}
+            response = requests.post(url, data=data, timeout=15)
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            print(f"[TELEGRAM ERROR] Failed to send text: {e}", flush=True)
+            return False
+
+    def telegram_listener_loop(self):
+        token = CURRENT_CONFIG["telegram"].get("bot_token")
+        chat_id = CURRENT_CONFIG["telegram"].get("channel_id")
+        if not token or not chat_id:
+            print("[TELEGRAM ERROR] Listener thread stopping: Missing config.", flush=True)
+            return
+
+        last_update_id = 0
+        print(f"[TELEGRAM] Monitoring channel {chat_id}...", flush=True)
+        
+        while not self.exiting:
+            try:
+                # Use a small timeout for long polling
+                url = f"https://api.telegram.org/bot{token}/getUpdates?offset={last_update_id + 1}&timeout=5"
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    updates = response.json().get("result", [])
+                    for update in updates:
+                        last_update_id = update["update_id"]
+                        # Channels use 'channel_post', groups/private use 'message'
+                        message = update.get("message", {}) or update.get("channel_post", {})
+                        
+                        # Verify chat ID match (handling potential int/str mismatch)
+                        msg_chat_id = str(message.get("chat", {}).get("id", ""))
+                        print(f"[TELEGRAM DEBUG] Observed Message from Chat ID: {msg_chat_id}", flush=True)
+                        
+                        target_chat_id = str(chat_id)
+                        
+                        if msg_chat_id != target_chat_id:
+                            continue
+                            
+                        text = message.get("text")
+                        if text:
+                            print(f"[TELEGRAM] Received: {text[:50]}...", flush=True)
+                            self.latest_telegram_response = text
+                            self.telegram_response_event.set()
+                
+            except Exception:
+                pass
+            time.sleep(1)
+
     def set_state(self, state, msg="", cam_path=None):
         def _update():
             if msg: print(f"[STATE] {state.upper()}: {msg}", flush=True)
@@ -648,8 +749,38 @@ class BotGUI:
                     self.set_state(BotStates.IDLE, "Heard nothing.")
                     continue
                 else:
-                    user_text = self.transcribe_audio(audio_file)
+                    if CURRENT_CONFIG.get("transporter") != "telegram":
+                        user_text = self.transcribe_audio(audio_file)
                 
+                # --- TRANSPORTER LOGIC ---
+                if CURRENT_CONFIG.get("transporter") == "telegram":
+                    self.set_state(BotStates.THINKING, "Sending to Telegram...")
+                    success = False
+                    if trigger_source == "TEXT":
+                        success = self.send_text_to_telegram(user_text)
+                    else:
+                        success = self.send_voice_to_telegram(audio_file)
+                    
+                    if success:
+                        self.telegram_response_event.clear()
+                        self.set_state(BotStates.THINKING, "Waiting for Reply...")
+                        if self.telegram_response_event.wait(timeout=60):
+                            response_text = self.latest_telegram_response
+                            self.telegram_response_event.clear()
+                            
+                            self.set_state(BotStates.SPEAKING, "Speaking...")
+                            self.append_to_text(f"BOT: {response_text}")
+                            with self.tts_queue_lock:
+                                self.tts_queue.append(response_text)
+                            self.wait_for_tts()
+                            self.set_state(BotStates.IDLE, "Ready")
+                        else:
+                            self.set_state(BotStates.ERROR, "Telegram Timeout")
+                    else:
+                        self.set_state(BotStates.ERROR, "Send Failed")
+                    continue
+                
+                # --- LOCAL PROCESSING (Bypassed if Transporter is Telegram) ---
                 if not user_text:
                     self.set_state(BotStates.IDLE, "Input empty.")
                     continue
@@ -894,23 +1025,57 @@ class BotGUI:
         return filename
 
     def transcribe_audio(self, filename):
-        print("Transcribing...", flush=True)
-        try:
-            result = subprocess.run(
-                ["./whisper.cpp/build/bin/whisper-cli", "-m", "./whisper.cpp/models/ggml-base.en.bin", "-l", "en", "-t", "4", "-f", filename],
-                capture_output=True, text=True
-            )
-            transcription_lines = result.stdout.strip().split('\n')
-            if transcription_lines and transcription_lines[-1].strip():
-                last_line = transcription_lines[-1].strip()
-                if ']' in last_line: transcription = last_line.split("]")[1].strip()
-                else: transcription = last_line
-            else: transcription = ""
-            print(f"Heard: '{transcription}'", flush=True)
-            return transcription.strip()
-        except Exception as e:
-            print(f"Transcription Error: {e}")
-            return ""
+        """Transcribe audio using OpenAI Whisper or remote OpenClaw"""
+        brain_type = CURRENT_CONFIG.get("brain_type", "ollama")
+        
+        if brain_type == "openai":
+            print("Transcribing via OpenAI Whisper...", flush=True)
+            config = CURRENT_CONFIG.get("openai", {})
+            api_key = config.get("api_key")
+            url = "https://api.openai.com/v1/audio/transcriptions"
+            
+            try:
+                headers = {"Authorization": f"Bearer {api_key}"}
+                with open(filename, "rb") as f:
+                    files = {
+                        "file": (filename, f, "audio/wav"),
+                        "model": (None, "whisper-1")
+                    }
+                    response = requests.post(url, headers=headers, files=files, timeout=15)
+                    response.raise_for_status()
+                    transcription = response.json().get("text", "").strip()
+                    if transcription:
+                        print(f"Heard (OpenAI): '{transcription}'", flush=True)
+                        return transcription
+            except Exception as e:
+                print(f"OpenAI STT Error: {e}", flush=True)
+                return ""
+
+        elif brain_type == "openclaw":
+            print("Transcribing via OpenClaw (Remote)...", flush=True)
+            config = CURRENT_CONFIG.get("openclaw", {})
+            url = config.get("url", "").replace("/chat/completions", "/audio/transcriptions")
+            token = config.get("token")
+            
+            if url:
+                try:
+                    headers = {"Authorization": f"Bearer {token}"}
+                    with open(filename, "rb") as f:
+                        files = {
+                            "file": (filename, f, "audio/wav"),
+                            "model": (None, "whisper-1")
+                        }
+                        response = requests.post(url, headers=headers, files=files, timeout=15)
+                        response.raise_for_status()
+                        transcription = response.json().get("text", "").strip()
+                        if transcription:
+                            print(f"Heard (Remote): '{transcription}'", flush=True)
+                            return transcription
+                except Exception as e:
+                    print(f"Remote STT Error: {e}", flush=True)
+        
+        return ""
+
 
     def capture_image(self):
         self.set_state(BotStates.CAPTURING, "Watching...")
@@ -929,7 +1094,40 @@ class BotGUI:
     def get_brain_response(self, messages, model_to_use):
         brain_type = CURRENT_CONFIG.get("brain_type", "ollama")
         
-        if brain_type == "openclaw":
+        if brain_type == "openai":
+            config = CURRENT_CONFIG.get("openai", {})
+            api_key = config.get("api_key")
+            url = "https://api.openai.com/v1/chat/completions"
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": config.get("chat_model", "gpt-4o"),
+                "messages": messages,
+                "stream": True
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            for line in response.iter_lines():
+                if line:
+                    line_text = line.decode('utf-8')
+                    if line_text.startswith("data: "):
+                        data_str = line_text[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            content = data['choices'][0]['delta'].get('content', '')
+                            if content:
+                                yield {'message': {'content': content}}
+                        except: pass
+                        
+        elif brain_type == "openclaw":
             config = CURRENT_CONFIG.get("openclaw", {})
             url = config.get("url")
             token = config.get("token")
@@ -1148,6 +1346,46 @@ class BotGUI:
         if TEXT_ONLY_MODE:
             return
         
+        brain_type = CURRENT_CONFIG.get("brain_type", "ollama")
+        
+        if brain_type == "openai":
+            print("Speaking via OpenAI TTS...", flush=True)
+            config = CURRENT_CONFIG.get("openai", {})
+            api_key = config.get("api_key")
+            url = "https://api.openai.com/v1/audio/speech"
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": config.get("tts_model", "tts-1"),
+                "input": clean,
+                "voice": config.get("tts_voice", "alloy"),
+                "response_format": "pcm" # We want raw pcm for sounddevice
+            }
+            
+            try:
+                response = requests.post(url, headers=headers, json=payload, stream=True, timeout=30)
+                response.raise_for_status()
+                
+                # Standard OpenAI PCM is 24kHz mono int16
+                SAMPLE_RATE = 24000
+                
+                with sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=1, dtype='int16', 
+                                        device=OUTPUT_DEVICE_NAME, latency='low', blocksize=2048) as stream:
+                    for chunk in response.iter_content(chunk_size=4096):
+                        if self.interrupted.is_set(): break
+                        if chunk:
+                            audio_chunk = np.frombuffer(chunk, dtype=np.int16)
+                            self.current_volume = np.max(np.abs(audio_chunk)) if len(audio_chunk) > 0 else 0
+                            stream.write(chunk)
+                return
+            except Exception as e:
+                print(f"OpenAI TTS Error: {e}")
+                # Fallback to piper if OpenAI fails
+
         voice_model = CURRENT_CONFIG.get("voice_model", "piper/en_GB-semaine-medium.onnx")
         
         try:
