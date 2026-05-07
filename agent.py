@@ -618,7 +618,6 @@ class BotGUI:
     def safe_main_execution(self):
         try:
             self.warm_up_logic()
-            self.tts_active.set()
             self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
             self.tts_thread.start()
             
@@ -1109,6 +1108,13 @@ class BotGUI:
             else:
                 self.append_to_text("")
                 self.session_memory.append({"role": "assistant", "content": full_response_buffer}) 
+            
+            # Flush any remaining text in the sentence buffer that didn't have punctuation
+            if sentence_buffer.strip():
+                clean_sentence = sentence_buffer.strip()
+                if clean_sentence and re.search(r'[a-zA-Z0-9]', clean_sentence):
+                    with self.tts_queue_lock: self.tts_queue.append(clean_sentence)
+                sentence_buffer = ""
             
             self.wait_for_tts()
             self.set_state(BotStates.IDLE, "Ready")
