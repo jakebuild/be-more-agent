@@ -67,7 +67,7 @@ pip install -r requirements.txt
 
 # 6. AI Models (Conditional)
 echo -e "${YELLOW}[6/6] Checking AI Models...${NC}"
-if [ "$(grep -o '"brain_type": "openclaw"' config.json)" == '"brain_type": "openclaw"' ]; then
+if grep -q '"brain_type"[[:space:]]*:[[:space:]]*"openclaw"' config.json; then
     echo -e "${GREEN}✅ Brain type set to OpenClaw. Skipping local model pulls.${NC}"
 else
     if command -v ollama &> /dev/null; then

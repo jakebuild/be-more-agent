@@ -883,7 +883,6 @@ class BotGUI:
                 response = requests.post(url, headers=headers, json=payload, stream=True, timeout=30)
                 response.raise_for_status()
                 
-                import json
                 for line in response.iter_lines():
                     if line:
                         line_text = line.decode('utf-8')
@@ -1199,12 +1198,17 @@ if __name__ == "__main__":
             print(f"[INFO] Running in pure CLI mode (No GUI): {e}")
             # Mock root for headless operation
             class MockRoot:
+                def __init__(self):
+                    self.tk = self
+                def call(self, *args): pass
                 def after(self, ms, func): 
                     # For headless, we just run it in a thread or immediately
                     threading.Thread(target=func, daemon=True).start()
                 def title(self, t): pass
                 def attributes(self, *args): pass
                 def bind(self, *args): pass
+                def withdraw(self): pass
+                def destroy(self): pass
             
             app = BotGUI(MockRoot())
             # Keep main thread alive
