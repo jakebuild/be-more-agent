@@ -1346,8 +1346,7 @@ class BotGUI:
         if not clean.strip(): return
         
         print(f"[BOT RESPONSE] '{clean}'", flush=True)
-        if TEXT_ONLY_MODE:
-            return
+        # Removed TEXT_ONLY_MODE check to allow speaking while typing
         
         brain_type = CURRENT_CONFIG.get("brain_type", "ollama")
         
@@ -1460,7 +1459,7 @@ class BotGUI:
         return None
 
     def play_sound(self, file_path):
-        if TEXT_ONLY_MODE: return
+        # Removed TEXT_ONLY_MODE check to allow sounds while typing
         if not file_path or not os.path.exists(file_path): return
         try:
             with wave.open(file_path, 'rb') as wf:
