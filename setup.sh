@@ -65,6 +65,20 @@ pip install --upgrade pip
 pip install --force-reinstall --no-cache-dir sounddevice
 pip install -r requirements.txt
 
+# 5.5. Setup Whisper.cpp for local transcription
+echo -e "${YELLOW}[5.5/6] Setting up Whisper.cpp for transcription...${NC}"
+if [ ! -d "whisper.cpp" ]; then
+    git clone https://github.com/ggerganov/whisper.cpp.git
+    cd whisper.cpp
+    bash ./models/download-ggml-model.sh base.en
+    cmake -B build
+    cmake --build build --config Release
+    cd ..
+else
+    echo -e "${GREEN}✅ Whisper.cpp already exists.${NC}"
+fi
+
+
 # 6. AI Models (Conditional)
 echo -e "${YELLOW}[6/6] Checking AI Models...${NC}"
 if grep -q '"brain_type"[[:space:]]*:[[:space:]]*"openclaw"' config.json; then
