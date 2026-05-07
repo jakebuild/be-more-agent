@@ -227,7 +227,7 @@ class BotGUI:
         master.bind('<Escape>', self.exit_fullscreen)
         
         # Inputs
-        if hasattr(master, 'bind'):
+        if hasattr(master, 'tk'):
             master.bind('<Return>', self.handle_ptt_toggle)
             master.bind('<space>', self.handle_speaking_interrupt)
         
@@ -273,7 +273,7 @@ class BotGUI:
                 from openwakeword.model import Model
             except ImportError as e:
                 print(f"[CRITICAL] AI Engines missing: {e}")
-                return
+                sys.exit(1)
 
             if os.path.exists(WAKE_WORD_MODEL):
                 try:
