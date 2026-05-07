@@ -26,8 +26,7 @@ memory.json
 chat_memory.json
 
 # Keep personal API keys or settings local
-# (Optional: comment this out if you WANT to share your config)
-# config.json
+config.json
 
 # --- Temporary/Generated Media ---
 *.wav

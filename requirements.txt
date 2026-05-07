@@ -7,3 +7,4 @@ ollama
 duckduckgo-search
 Pillow
 requests
+python-dotenv

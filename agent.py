@@ -29,6 +29,10 @@ import datetime
 import warnings
 import wave
 import struct 
+from dotenv import load_dotenv
+
+# Load .env file if it exists
+load_dotenv()
 
 # Suppress harmless library warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_search")
@@ -98,6 +102,17 @@ def load_config():
                 config.update(user_config)
         except Exception as e:
             print(f"Config Error: {e}. Using defaults.")
+
+    # Override with Environment Variables for security
+    if os.getenv("OPENCLAW_URL"):
+        config["openclaw"]["url"] = os.getenv("OPENCLAW_URL")
+    if os.getenv("OPENCLAW_TOKEN"):
+        config["openclaw"]["token"] = os.getenv("OPENCLAW_TOKEN")
+    if os.getenv("OPENCLAW_MODEL"):
+        config["openclaw"]["model"] = os.getenv("OPENCLAW_MODEL")
+    if os.getenv("BRAIN_TYPE"):
+        config["brain_type"] = os.getenv("BRAIN_TYPE")
+        
     return config
 
 CURRENT_CONFIG = load_config()
