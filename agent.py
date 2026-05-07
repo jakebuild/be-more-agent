@@ -81,6 +81,7 @@ DEFAULT_CONFIG = {
     "camera_rotation": 0,
     "system_prompt_extras": "",
     "input_device": None,
+    "output_device": None,
     "input_sample_rate": None,
     "wake_word_enabled": True
 }
@@ -115,6 +116,10 @@ def load_config():
         config["brain_type"] = os.getenv("BRAIN_TYPE")
     if os.getenv("WAKE_WORD_ENABLED"):
         config["wake_word_enabled"] = os.getenv("WAKE_WORD_ENABLED").lower() == "true"
+    if os.getenv("INPUT_DEVICE"):
+        config["input_device"] = os.getenv("INPUT_DEVICE")
+    if os.getenv("OUTPUT_DEVICE"):
+        config["output_device"] = os.getenv("OUTPUT_DEVICE")
         
     return config
 
@@ -156,6 +161,37 @@ if INPUT_DEVICE_NAME is not None:
         print(f"[AUDIO] Using input device: {device_info.get('name', INPUT_DEVICE_NAME)}", flush=True)
     except Exception:
         print(f"[AUDIO] Using input device index: {INPUT_DEVICE_NAME}", flush=True)
+
+def resolve_output_device(config):
+    requested = config.get("output_device")
+    if requested in (None, "", "default"):
+        return None
+
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return None
+
+    if isinstance(requested, int) or (isinstance(requested, str) and requested.isdigit()):
+        index = int(requested)
+        if 0 <= index < len(devices):
+            return index
+        return None
+
+    requested_lower = str(requested).lower()
+    for idx, dev in enumerate(devices):
+        if dev.get("max_output_channels", 0) > 0 and requested_lower in dev.get("name", "").lower():
+            return idx
+
+    return None
+
+OUTPUT_DEVICE_NAME = resolve_output_device(CURRENT_CONFIG)
+if OUTPUT_DEVICE_NAME is not None:
+    try:
+        device_info = sd.query_devices(OUTPUT_DEVICE_NAME)
+        print(f"[AUDIO] Using output device: {device_info.get('name', OUTPUT_DEVICE_NAME)}", flush=True)
+    except Exception:
+        print(f"[AUDIO] Using output device index: {OUTPUT_DEVICE_NAME}", flush=True)
 
 def choose_input_samplerate(device, preferred=None):
     candidates = []
@@ -1183,20 +1219,20 @@ class BotGUI:
                 audio = np.frombuffer(data, dtype=np.int16)
 
             try:
-                device_info = sd.query_devices(kind='output')
+                device_info = sd.query_devices(device=OUTPUT_DEVICE_NAME, kind='output')
                 native_rate = int(device_info['default_samplerate'])
             except:
                 native_rate = 48000 
 
             playback_rate = file_sr
             try:
-                sd.check_output_settings(device=None, samplerate=file_sr)
+                sd.check_output_settings(device=OUTPUT_DEVICE_NAME, samplerate=file_sr)
             except:
                 playback_rate = native_rate
                 num_samples = int(len(audio) * (native_rate / file_sr))
                 audio = scipy.signal.resample(audio, num_samples).astype(np.int16)
 
-            sd.play(audio, playback_rate)
+            sd.play(audio, playback_rate, device=OUTPUT_DEVICE_NAME)
             sd.wait() 
         except: pass
 
