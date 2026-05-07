@@ -594,9 +594,10 @@ class BotGUI:
                             
                         text = message.get("text")
                         if text:
-                            print(f"[TELEGRAM] Received: {text[:50]}...", flush=True)
+                            print(f"[TELEGRAM DEBUG] Message content: '{text[:50]}'", flush=True)
                             self.latest_telegram_response = text
                             self.telegram_response_event.set()
+                            print(f"[TELEGRAM DEBUG] Event SET triggered.", flush=True)
                 
             except Exception:
                 pass
@@ -767,17 +768,23 @@ class BotGUI:
                     if success:
                         self.telegram_response_event.clear()
                         self.set_state(BotStates.THINKING, "Waiting for Reply...")
-                        if self.telegram_response_event.wait(timeout=60):
+                        # Increased timeout to 300s (5 minutes)
+                        if self.telegram_response_event.wait(timeout=300):
                             response_text = self.latest_telegram_response
+                            print(f"[DEBUG] Main loop woke up! Response: '{response_text[:30]}'", flush=True)
                             self.telegram_response_event.clear()
                             
                             self.set_state(BotStates.SPEAKING, "Speaking...")
                             self.append_to_text(f"BOT: {response_text}")
+                            print(f"[DEBUG] Adding to TTS queue...", flush=True)
                             with self.tts_queue_lock:
                                 self.tts_queue.append(response_text)
+                            print(f"[DEBUG] Waiting for TTS to finish...", flush=True)
                             self.wait_for_tts()
+                            print(f"[DEBUG] TTS finished, back to IDLE.", flush=True)
                             self.set_state(BotStates.IDLE, "Ready")
                         else:
+                            print(f"[DEBUG] Telegram timeout reached.", flush=True)
                             self.set_state(BotStates.ERROR, "Telegram Timeout")
                     else:
                         self.set_state(BotStates.ERROR, "Send Failed")
@@ -1342,6 +1349,7 @@ class BotGUI:
             else: time.sleep(0.05)
 
     def speak(self, text):
+        print(f"[DEBUG] speak() called with: '{text[:50]}'", flush=True)
         clean = re.sub(r"[^\w\s,.!?:-]", "", text)
         if not clean.strip(): return
         
