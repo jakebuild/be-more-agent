@@ -1418,10 +1418,16 @@ class BotGUI:
                 # Fallback to piper if OpenAI fails
 
         voice_model = CURRENT_CONFIG.get("voice_model", "piper/en_GB-semaine-medium.onnx")
+        # Use absolute paths for Pi compatibility
+        base_dir = "/home/jake/be-more-agent"
+        piper_path = os.path.join(base_dir, "piper/piper")
+        model_path = os.path.join(base_dir, voice_model) if not voice_model.startswith("/") else voice_model
+        
+        print(f"[DEBUG] Running Piper: {piper_path} with model: {model_path}", flush=True)
         
         try:
             self.current_audio_process = subprocess.Popen(
-                ["./piper/piper", "--model", voice_model, "--output-raw"], 
+                [piper_path, "--model", model_path, "--output-raw"], 
                 stdin=subprocess.PIPE, 
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL
