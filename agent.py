@@ -574,7 +574,19 @@ class BotGUI:
             print("[TELEGRAM ERROR] Listener thread stopping: Missing Bot Token.", flush=True)
             return
 
-        last_update_id = 0
+        # 1. Skip old updates on startup to avoid processing history
+        try:
+            init_url = f"https://api.telegram.org/bot{token}/getUpdates?limit=1&offset=-1"
+            init_resp = requests.get(init_url, timeout=5).json()
+            if init_resp.get("ok") and init_resp.get("result"):
+                last_update_id = init_resp["result"][0]["update_id"]
+                print(f"[TELEGRAM] Synced to latest update ID: {last_update_id}", flush=True)
+            else:
+                last_update_id = 0
+        except Exception as e:
+            print(f"[TELEGRAM WARNING] Could not sync updates: {e}", flush=True)
+            last_update_id = 0
+
         if chat_id:
             print(f"[TELEGRAM] Monitoring channel {chat_id}...", flush=True)
         else:
@@ -582,8 +594,8 @@ class BotGUI:
         
         while not self.exiting:
             try:
-                # Use a small timeout for long polling
-                url = f"https://api.telegram.org/bot{token}/getUpdates?offset={last_update_id + 1}&timeout=5"
+                # 2. Faster polling (2s timeout)
+                url = f"https://api.telegram.org/bot{token}/getUpdates?offset={last_update_id + 1}&timeout=2"
                 response = requests.get(url, timeout=10)
                 if response.status_code == 200:
                     updates = response.json().get("result", [])
