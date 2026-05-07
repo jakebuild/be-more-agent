@@ -6,5 +6,5 @@ cd "$BASE_DIR"
 
 source venv/bin/activate
 
-# Allow passing arguments to agent.py (e.g. ./start_agent.sh --text)
-exec python agent.py "$@"
+# Allow passing arguments and save all output to agent.log
+python -u agent.py "$@" 2>&1 | tee -a agent.log
