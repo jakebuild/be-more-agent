@@ -14,7 +14,7 @@
   },
   "text_model": "gpt-4o",
   "vision_model": "gpt-4o",
-  "voice_model": "alloy",
+  "voice_model": "piper/en_GB-semaine-medium.onnx",
   "chat_memory": true,
   "camera_rotation": 180,
   "system_prompt": "You are a helpful robot assistant running on a Raspberry Pi. Keep responses short and friendly.",
