@@ -1203,34 +1203,29 @@ class BotGUI:
 if __name__ == "__main__":
     print("--- SYSTEM STARTING ---", flush=True)
     
-    if TEXT_ONLY_MODE:
-        # Check if we can/should run with GUI
-        try:
-            root = tk.Tk()
-            app = BotGUI(root)
-            root.mainloop()
-        except Exception as e:
-            print(f"[INFO] Running in pure CLI mode (No GUI): {e}")
-            # Mock root for headless operation
-            class MockRoot:
-                def __init__(self):
-                    self.tk = self
-                    self.is_mock = True
-                def call(self, *args): pass
-                def after(self, ms, func): 
-                    # For headless, we just run it in a thread or immediately
-                    threading.Thread(target=func, daemon=True).start()
-                def title(self, t): pass
-                def attributes(self, *args): pass
-                def bind(self, *args): pass
-                def withdraw(self): pass
-                def destroy(self): pass
-            
-            app = BotGUI(MockRoot())
-            # Keep main thread alive
-            while True:
-                time.sleep(1)
-    else:
+    # Check if we can/should run with GUI
+    try:
         root = tk.Tk()
         app = BotGUI(root)
         root.mainloop()
+    except Exception as e:
+        print(f"[INFO] Running in pure CLI mode (No GUI): {e}")
+        # Mock root for headless operation
+        class MockRoot:
+            def __init__(self):
+                self.tk = self
+                self.is_mock = True
+            def call(self, *args): pass
+            def after(self, ms, func): 
+                # For headless, we just run it in a thread or immediately
+                threading.Thread(target=func, daemon=True).start()
+            def title(self, t): pass
+            def attributes(self, *args): pass
+            def bind(self, *args): pass
+            def withdraw(self): pass
+            def destroy(self): pass
+        
+        app = BotGUI(MockRoot())
+        # Keep main thread alive
+        while True:
+            time.sleep(1)
