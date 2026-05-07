@@ -129,6 +129,8 @@ def load_config():
         config["telegram"]["bot_token"] = os.getenv("TELEGRAM_BOT_TOKEN")
     if os.getenv("TELEGRAM_CHANNEL_ID"):
         config["telegram"]["channel_id"] = os.getenv("TELEGRAM_CHANNEL_ID")
+    if os.getenv("TELEGRAM_MENTION"):
+        config["telegram"]["mention"] = os.getenv("TELEGRAM_MENTION")
     if os.getenv("TRANSPORTER"):
         config["transporter"] = os.getenv("TRANSPORTER")
         
@@ -532,8 +534,12 @@ class BotGUI:
         url = f"https://api.telegram.org/bot{token}/sendVoice"
         try:
             with open(file_path, 'rb') as f:
+                mention = CURRENT_CONFIG["telegram"].get("mention", "")
                 files = {'voice': f}
                 data = {'chat_id': chat_id}
+                if mention:
+                    data['caption'] = mention
+                    
                 response = requests.post(url, files=files, data=data, timeout=15)
                 response.raise_for_status()
                 return True
@@ -550,7 +556,10 @@ class BotGUI:
             
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         try:
-            data = {'chat_id': chat_id, 'text': text}
+            mention = CURRENT_CONFIG["telegram"].get("mention", "")
+            full_text = f"{mention} {text}" if mention else text
+            
+            data = {'chat_id': chat_id, 'text': full_text}
             response = requests.post(url, data=data, timeout=15)
             response.raise_for_status()
             return True
