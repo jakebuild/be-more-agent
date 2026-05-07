@@ -349,7 +349,10 @@ class BotGUI:
             else:
                 print(f"[CRITICAL] Model not found: {WAKE_WORD_MODEL}")
         else:
-            print("[INIT] Text-only mode enabled. Skipping Wake Word.", flush=True)
+            if TEXT_ONLY_MODE:
+                print("[INIT] Text-only mode enabled. Skipping Wake Word.", flush=True)
+            else:
+                print("[INIT] Wake Word disabled via config. Using PTT mode.", flush=True)
 
         # GUI Setup (Skip if master is MockRoot or headless)
         if hasattr(master, 'tk') and not getattr(master, 'is_mock', False):
@@ -1153,7 +1156,7 @@ class BotGUI:
             self.current_audio_process.stdin.close() 
 
             try:
-                device_info = sd.query_devices(kind='output')
+                device_info = sd.query_devices(device=OUTPUT_DEVICE_NAME, kind='output')
                 native_rate = int(device_info['default_samplerate'])
             except:
                 native_rate = 48000 
@@ -1162,13 +1165,13 @@ class BotGUI:
             use_native_rate = False
             
             try:
-                sd.check_output_settings(device=None, samplerate=PIPER_RATE)
+                sd.check_output_settings(device=OUTPUT_DEVICE_NAME, samplerate=PIPER_RATE)
             except:
                 use_native_rate = True
 
             with sd.RawOutputStream(samplerate=native_rate if use_native_rate else PIPER_RATE, 
                                     channels=1, dtype='int16', 
-                                    device=None, latency='low', blocksize=2048) as stream:
+                                    device=OUTPUT_DEVICE_NAME, latency='low', blocksize=2048) as stream:
                 while True:
                     if self.interrupted.is_set(): break
                     data = self.current_audio_process.stdout.read(4096)
