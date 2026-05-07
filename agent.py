@@ -308,7 +308,7 @@ class BotGUI:
             print("[INIT] Text-only mode enabled. Skipping Wake Word.", flush=True)
 
         # GUI Setup (Skip if master is MockRoot or headless)
-        if hasattr(master, 'tk'):
+        if hasattr(master, 'tk') and not getattr(master, 'is_mock', False):
             self.background_label = tk.Label(master)
             self.background_label.place(x=0, y=0, width=self.BG_WIDTH, height=self.BG_HEIGHT)
             self.background_label.bind('<Button-1>', self.toggle_hud_visibility) 
@@ -1215,6 +1215,7 @@ if __name__ == "__main__":
             class MockRoot:
                 def __init__(self):
                     self.tk = self
+                    self.is_mock = True
                 def call(self, *args): pass
                 def after(self, ms, func): 
                     # For headless, we just run it in a thread or immediately
