@@ -39,8 +39,8 @@ import numpy as np
 import scipy.signal 
 
 # --- AI ENGINES ---
-import openwakeword
-from openwakeword.model import Model
+openwakeword = None
+Model = None
 try:
     import ollama 
 except ImportError:
@@ -227,8 +227,10 @@ class BotGUI:
         master.bind('<Escape>', self.exit_fullscreen)
         
         # Inputs
-        master.bind('<Return>', self.handle_ptt_toggle)
-        master.bind('<space>', self.handle_speaking_interrupt)
+        if hasattr(master, 'bind'):
+            master.bind('<Return>', self.handle_ptt_toggle)
+            master.bind('<space>', self.handle_speaking_interrupt)
+        
         atexit.register(self.safe_exit)
         
         # State
@@ -237,6 +239,12 @@ class BotGUI:
         self.animations = {}
         self.current_frame_index = 0
         self.current_overlay_image = None
+        
+        # Mocks for headless mode
+        self.status_var = type('Mock', (object,), {'set': lambda self, x: None, 'get': lambda self: ""})()
+        self.response_text = type('Mock', (object,), {'config': lambda self, **k: None, 'insert': lambda self, *a, **k: None, 'delete': lambda self, *a: None, 'see': lambda self, x: None})()
+        self.background_label = type('Mock', (object,), {'config': lambda self, **k: None, 'place': lambda self, **k: None, 'place_forget': lambda self: None})()
+        self.overlay_label = type('Mock', (object,), {'config': lambda self, **k: None, 'place': lambda self, **k: None, 'place_forget': lambda self: None})()
         
         self.permanent_memory = self.load_chat_history()
         self.session_memory = []
@@ -258,6 +266,15 @@ class BotGUI:
         print("[INIT] Loading Wake Word...", flush=True)
         self.oww_model = None
         if not TEXT_ONLY_MODE:
+            print("[INIT] Loading AI Engines...", flush=True)
+            global openwakeword, Model
+            try:
+                import openwakeword
+                from openwakeword.model import Model
+            except ImportError as e:
+                print(f"[CRITICAL] AI Engines missing: {e}")
+                return
+
             if os.path.exists(WAKE_WORD_MODEL):
                 try:
                     self.oww_model = Model(wakeword_model_paths=[WAKE_WORD_MODEL])
@@ -275,24 +292,27 @@ class BotGUI:
         else:
             print("[INIT] Text-only mode enabled. Skipping Wake Word.", flush=True)
 
-        # GUI Setup
-        self.background_label = tk.Label(master)
-        self.background_label.place(x=0, y=0, width=self.BG_WIDTH, height=self.BG_HEIGHT)
-        self.background_label.bind('<Button-1>', self.toggle_hud_visibility) 
-        
-        self.overlay_label = tk.Label(master, bg='black')
-        self.overlay_label.bind('<Button-1>', self.toggle_hud_visibility)
-        
-        self.response_text = tk.Text(master, height=6, width=60, wrap=tk.WORD, 
-                                     state=tk.DISABLED, bg="#ffffff", fg="#000000", font=('Arial', 12)) 
-        
-        self.status_var = tk.StringVar(value="Initializing...")
-        self.status_label = ttk.Label(master, textvariable=self.status_var, background="#2e2e2e", foreground="white")
-        
-        self.exit_button = ttk.Button(master, text="Exit & Save", command=self.safe_exit)
+        # GUI Setup (Skip if master is MockRoot or headless)
+        if hasattr(master, 'tk'):
+            self.background_label = tk.Label(master)
+            self.background_label.place(x=0, y=0, width=self.BG_WIDTH, height=self.BG_HEIGHT)
+            self.background_label.bind('<Button-1>', self.toggle_hud_visibility) 
+            
+            self.overlay_label = tk.Label(master, bg='black')
+            self.overlay_label.bind('<Button-1>', self.toggle_hud_visibility)
+            
+            self.response_text = tk.Text(master, height=6, width=60, wrap=tk.WORD, 
+                                         state=tk.DISABLED, bg="#ffffff", fg="#000000", font=('Arial', 12)) 
+            
+            self.status_var = tk.StringVar(value="Initializing...")
+            self.status_label = ttk.Label(master, textvariable=self.status_var, background="#2e2e2e", foreground="white")
+            
+            self.exit_button = ttk.Button(master, text="Exit & Save", command=self.safe_exit)
 
-        self.load_animations()
-        self.update_animation() 
+            self.load_animations()
+            self.update_animation() 
+        else:
+            print("[INFO] GUI widgets skipped (Headless Mode)", flush=True)
         
         threading.Thread(target=self.safe_main_execution, daemon=True).start()
 
