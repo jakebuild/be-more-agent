@@ -1412,36 +1412,34 @@ class BotGUI:
             try:
                 device_info = sd.query_devices(device=OUTPUT_DEVICE_NAME, kind='output')
                 native_rate = int(device_info['default_samplerate'])
+                print(f"[DEBUG] Speaker native rate: {native_rate}, Device: {OUTPUT_DEVICE_NAME}", flush=True)
             except:
                 native_rate = 48000 
 
             PIPER_RATE = 22050
-            use_native_rate = False
             
-            try:
-                sd.check_output_settings(device=OUTPUT_DEVICE_NAME, samplerate=PIPER_RATE)
-            except:
-                use_native_rate = True
+            # Read all audio data from Piper at once for a more stable playback
+            all_audio = []
+            while True:
+                data = self.current_audio_process.stdout.read(4096)
+                if not data: break
+                all_audio.append(np.frombuffer(data, dtype=np.int16))
+            
+            if not all_audio:
+                print("[DEBUG] Piper produced no audio data!", flush=True)
+                return
 
-            with sd.RawOutputStream(samplerate=native_rate if use_native_rate else PIPER_RATE, 
-                                    channels=1, dtype='int16', 
-                                    device=OUTPUT_DEVICE_NAME, latency='low', blocksize=2048) as stream:
-                while True:
-                    if self.interrupted.is_set(): break
-                    data = self.current_audio_process.stdout.read(4096)
-                    if not data: break 
-                    
-                    audio_chunk = np.frombuffer(data, dtype=np.int16)
-                    if len(audio_chunk) > 0:
-                        self.current_volume = np.max(np.abs(audio_chunk))
-                        if use_native_rate:
-                            num_samples = int(len(audio_chunk) * (native_rate / PIPER_RATE))
-                            audio_chunk = scipy.signal.resample(audio_chunk, num_samples).astype(np.int16)
-                        stream.write(audio_chunk.tobytes())
-                    else:
-                        self.current_volume = 0
-                time.sleep(0.5) 
-                    
+            audio_chunk = np.concatenate(all_audio)
+            
+            # Resample to native rate if needed
+            if native_rate != PIPER_RATE:
+                num_samples = int(len(audio_chunk) * (native_rate / PIPER_RATE))
+                audio_chunk = scipy.signal.resample(audio_chunk, num_samples).astype(np.int16)
+            
+            # Use sd.play for more reliable output (matches play_sound logic)
+            sd.play(audio_chunk, native_rate, device=OUTPUT_DEVICE_NAME)
+            sd.wait()
+            
         except Exception as e:
             print(f"Audio Error: {e}")
         finally:
