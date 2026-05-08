@@ -756,7 +756,7 @@ class BotGUI:
             play_proc = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", local_path])
             
             # Sync delay
-            delay = 0.8
+            delay = 1.3
             print(f"[TIMING] Waiting {delay}s for hardware sync...", flush=True)
             time.sleep(delay)
             
