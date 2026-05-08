@@ -747,13 +747,17 @@ class BotGUI:
             with open(local_path, "wb") as f:
                 f.write(resp.content)
             
-            # 3. Download finished! Now start playback and state simultaneously
+            # 3. Download finished! Now start playback
             print(f"[TELEGRAM] Download finished. Starting voice playback...", flush=True)
             
-            # Start ffplay in background to minimize latency
+            # Start ffplay in background
             play_proc = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", local_path])
             
-            # Immediately trigger GUI state
+            # WAIT for the audio hardware to actually start (usually ~0.8s on Pi)
+            # This ensures the face doesn't "talk" before the sound comes out
+            time.sleep(0.8)
+            
+            # Now trigger GUI state and text
             self.set_state(BotStates.SPEAKING, "Playing Voice...")
             self.append_to_text("🔊 [VOICE MESSAGE]")
             
