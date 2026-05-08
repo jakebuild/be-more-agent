@@ -306,6 +306,7 @@ class BotGUI:
         self.animations = {}
         self.current_frame_index = 0
         self.current_overlay_image = None
+        self.telegram_lock = threading.Lock()
         
         # Mocks for headless mode
         self.overlay_text = ""
@@ -566,10 +567,13 @@ class BotGUI:
         self.master.after(speed, self.update_animation)
 
     def start_telegram_listener(self):
-        if not self.telegram_thread or not self.telegram_thread.is_alive():
-            print("[TELEGRAM] Starting Listener Thread...", flush=True)
-            self.telegram_thread = threading.Thread(target=self.telegram_listener_loop, daemon=True)
-            self.telegram_thread.start()
+        with self.telegram_lock:
+            if self.telegram_thread is None or not self.telegram_thread.is_alive():
+                print("[TELEGRAM] Starting Listener Thread...", flush=True)
+                self.telegram_thread = threading.Thread(target=self.telegram_listener_loop, daemon=True)
+                self.telegram_thread.start()
+            else:
+                print("[TELEGRAM DEBUG] Listener thread already running.", flush=True)
 
     def send_voice_to_telegram(self, file_path):
         token = CURRENT_CONFIG["telegram"].get("bot_token")
