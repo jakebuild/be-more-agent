@@ -13,7 +13,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 import threading
 import time
 import json
@@ -308,8 +308,9 @@ class BotGUI:
         self.current_overlay_image = None
         
         # Mocks for headless mode
+        self.overlay_text = ""
+        self.overlay_text_time = 0
         self.status_var = type('Mock', (object,), {'set': lambda self, x: None, 'get': lambda self: ""})()
-        self.response_text = type('Mock', (object,), {'config': lambda self, **k: None, 'insert': lambda self, *a, **k: None, 'delete': lambda self, *a: None, 'see': lambda self, x: None})()
         self.background_label = type('Mock', (object,), {'config': lambda self, **k: None, 'place': lambda self, **k: None, 'place_forget': lambda self: None})()
         self.overlay_label = type('Mock', (object,), {'config': lambda self, **k: None, 'place': lambda self, **k: None, 'place_forget': lambda self: None})()
         
@@ -383,12 +384,8 @@ class BotGUI:
             self.overlay_label = tk.Label(master, bg='black')
             self.overlay_label.bind('<Button-1>', self.toggle_hud_visibility)
             
-            # Cyber-Glass Transparent Look
-            self.response_text = tk.Text(master, height=4, width=45, wrap=tk.WORD, 
-                                         state=tk.DISABLED, bg="#050505", fg="#00ffcc", 
-                                         font=('Outfit', 22, 'bold'), bd=0, padx=25, pady=25,
-                                         highlightthickness=0, relief='flat') 
-            self.response_text.tag_configure("center", justify='center')
+            # No more physical text box - we draw directly on the face!
+            self.response_text = type('Mock', (object,), {'config': lambda self, **k: None, 'insert': lambda self, *a, **k: None, 'delete': lambda self, *a: None, 'see': lambda self, x: None, 'winfo_ismapped': lambda self: False, 'place_forget': lambda self: None})()
             
             self.status_var = tk.StringVar(value="Initializing...")
             self.status_label = ttk.Label(master, textvariable=self.status_var, background="#2e2e2e", foreground="white")
@@ -514,11 +511,49 @@ class BotGUI:
             if len(frames) > 1:
                 self.current_frame_index = random.randint(1, len(frames) - 1)
             else:
-                self.current_frame_index = 0 
+                self.current_frame_index = 0
         else:
             self.current_frame_index = (self.current_frame_index + 1) % len(frames)
+            
+        # Prepare the image
+        img = frames[self.current_frame_index].copy()
+        
+        # --- HOLOGRAPHIC OVERLAY LOGIC ---
+        # If we have text and it's less than 15 seconds old
+        if hasattr(self, 'overlay_text') and self.overlay_text and (time.time() - self.overlay_text_time < 15):
+            draw = ImageDraw.Draw(img)
+            
+            # Try to load a nice font, fallback to default
+            try:
+                # Common path on Raspberry Pi
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+            except:
+                font = ImageFont.load_default()
+            
+            # Wrap text manually
+            words = self.overlay_text.split()
+            lines = []
+            current_line = []
+            for word in words:
+                current_line.append(word)
+                # Max 20 chars per line roughly
+                if len(" ".join(current_line)) > 20:
+                    lines.append(" ".join(current_line))
+                    current_line = []
+            if current_line:
+                lines.append(" ".join(current_line))
+            
+            # Draw each line centered at the bottom
+            y_offset = self.BG_HEIGHT - (len(lines) * 40) - 20
+            for line in lines:
+                # Simple shadow for readability
+                draw.text((self.BG_WIDTH//2 + 2, y_offset + 2), line, font=font, fill="black", anchor="ms")
+                # Neon Cyan text
+                draw.text((self.BG_WIDTH//2, y_offset), line, font=font, fill="#00ffcc", anchor="ms")
+                y_offset += 40
 
-        self.background_label.config(image=frames[self.current_frame_index])
+        self.current_photo = ImageTk.PhotoImage(img)
+        self.background_label.config(image=self.current_photo)
         
         speed = 50 if self.current_state == BotStates.SPEAKING else 500
         self.master.after(speed, self.update_animation)
@@ -656,23 +691,9 @@ class BotGUI:
 
     def append_to_text(self, text, newline=True):
         if not self.master: return
-        def _update():
-            # Auto-show the HUD when new text arrives
-            self.toggle_hud_visibility(show_only=True)
-            
-            self.response_text.config(state=tk.NORMAL)
-            if newline: 
-                self.response_text.insert(tk.END, text + "\n", "center")
-            else: 
-                self.response_text.insert(tk.END, text, "center")
-            
-            self.response_text.see(tk.END)
-            self.response_text.config(state=tk.DISABLED)
-            
-            # Auto-hide after 15 seconds of inactivity
-            self.master.after(15000, lambda: self.response_text.place_forget() if self.response_text else None)
-            
-        self.master.after(0, _update)
+        print(f"[HUD] Showing: {text}", flush=True)
+        self.overlay_text = text
+        self.overlay_text_time = time.time()
 
     def _stream_to_text(self, chunk):
         if not self.master: return
