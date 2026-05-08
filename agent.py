@@ -795,14 +795,22 @@ class BotGUI:
                             print(f"[DEBUG] Main loop woke up! Response: '{response_text[:30]}'", flush=True)
                             self.telegram_response_event.clear()
                             
-                            self.set_state(BotStates.SPEAKING, "Speaking...")
+                            self.set_state(BotStates.SPEAKING, "Displaying Response...")
+                            
+                            # --- TERMINAL DISPLAY "SCREEN" ---
+                            print("\n" + "="*50)
+                            print(f" 🤖 BOT RESPONSE:")
+                            print("-" * 50)
+                            print(f" {response_text}")
+                            print("="*50 + "\n")
+                            
                             self.append_to_text(f"BOT: {response_text}")
-                            print(f"[DEBUG] Adding to TTS queue...", flush=True)
-                            with self.tts_queue_lock:
-                                self.tts_queue.append(response_text)
-                            print(f"[DEBUG] Waiting for TTS to finish...", flush=True)
-                            self.wait_for_tts()
-                            print(f"[DEBUG] TTS finished, back to IDLE.", flush=True)
+                            
+                            # Voice skipped as requested
+                            # with self.tts_queue_lock:
+                            #     self.tts_queue.append(response_text)
+                            # self.wait_for_tts()
+                            
                             self.set_state(BotStates.IDLE, "Ready")
                         else:
                             print(f"[DEBUG] Telegram timeout reached.", flush=True)
