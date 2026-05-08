@@ -491,19 +491,18 @@ class BotGUI:
             if os.path.exists(folder):
                 files = sorted([f for f in os.listdir(folder) if f.lower().endswith('.png')])
                 for f in files:
-                    img = Image.open(os.path.join(folder, f)).resize((self.BG_WIDTH, self.BG_HEIGHT))
                     frame_path = os.path.join(folder, f)
                     with Image.open(frame_path) as img:
                         img = img.resize((self.BG_WIDTH, self.BG_HEIGHT), Image.Resampling.LANCZOS)
                         # Store raw PIL image instead of PhotoImage
-                        self.animations[state_name].append(img.copy())
-            if not self.animations[state_name]:
-                if state_name in self.animations.get("idle", []):
-                     self.animations[state_name] = self.animations["idle"]
+                        self.animations[state].append(img.copy())
+            if not self.animations[state]:
+                if state in self.animations.get("idle", []):
+                     self.animations[state] = self.animations["idle"]
                 else:
                     # Blue screen fallback
                     blank = Image.new('RGB', (self.BG_WIDTH, self.BG_HEIGHT), color='#0000FF')
-                    self.animations[state_name].append(blank)
+                    self.animations[state].append(blank)
 
     def update_animation(self):
         frames = self.animations.get(self.current_state, []) or self.animations.get(BotStates.IDLE, [])
