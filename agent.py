@@ -728,10 +728,15 @@ class BotGUI:
 
     def handle_telegram_voice(self, voice_data, token):
         try:
+            # Set thinking state while downloading
+            self.set_state(BotStates.THINKING, "Downloading Voice...")
+            
             file_id = voice_data["file_id"]
             # 1. Get file path
             file_info = requests.get(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}", timeout=10).json()
-            if not file_info.get("ok"): return
+            if not file_info.get("ok"): 
+                self.set_state(BotStates.ERROR, "File not found")
+                return
             
             file_path = file_info["result"]["file_path"]
             download_url = f"https://api.telegram.org/file/bot{token}/{file_path}"
@@ -742,17 +747,18 @@ class BotGUI:
             with open(local_path, "wb") as f:
                 f.write(resp.content)
             
-            # 3. Play using ffplay (best for ogg/opus on Pi)
-            print(f"[TELEGRAM] Playing voice response...", flush=True)
+            # 3. Download finished! Now switch to speaking and play
+            print(f"[TELEGRAM] Download finished. Playing voice response...", flush=True)
             self.set_state(BotStates.SPEAKING, "Playing Voice...")
             self.append_to_text("🔊 [VOICE MESSAGE]")
             
-            # Run in a way that doesn't block the listener too long but plays fully
+            # Run ffplay
             subprocess.run(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", local_path])
             
             self.set_state(BotStates.IDLE, "Ready")
         except Exception as e:
             print(f"[TELEGRAM ERROR] Failed to play voice: {e}", flush=True)
+            self.set_state(BotStates.ERROR, "Playback failed")
 
     def append_to_text(self, text, newline=True):
         if not self.master: return
