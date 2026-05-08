@@ -727,8 +727,9 @@ class BotGUI:
         self.master.after(0, _update)
 
     def handle_telegram_voice(self, voice_data, token):
+        start_time = time.time()
         try:
-            # Set thinking state while downloading
+            print(f"[TIMING] {time.strftime('%H:%M:%S')} - Starting voice process...", flush=True)
             self.set_state(BotStates.THINKING, "Downloading Voice...")
             
             file_id = voice_data["file_id"]
@@ -742,27 +743,31 @@ class BotGUI:
             download_url = f"https://api.telegram.org/file/bot{token}/{file_path}"
             
             # 2. Download
+            dl_start = time.time()
             resp = requests.get(download_url, timeout=30)
             local_path = "response_voice.ogg"
             with open(local_path, "wb") as f:
                 f.write(resp.content)
+            print(f"[TIMING] Download took {time.time() - dl_start:.2f}s", flush=True)
             
-            # 3. Download finished! Now start playback
-            print(f"[TELEGRAM] Download finished. Starting voice playback...", flush=True)
-            
-            # Start ffplay in background
+            # 3. Start playback
+            play_start = time.time()
+            print(f"[TIMING] {time.strftime('%H:%M:%S')} - Calling ffplay...", flush=True)
             play_proc = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", local_path])
             
-            # WAIT for the audio hardware to actually start (usually ~0.8s on Pi)
-            # This ensures the face doesn't "talk" before the sound comes out
-            time.sleep(0.8)
+            # Sync delay
+            delay = 0.8
+            print(f"[TIMING] Waiting {delay}s for hardware sync...", flush=True)
+            time.sleep(delay)
             
-            # Now trigger GUI state and text
+            # Now trigger GUI
+            print(f"[TIMING] {time.strftime('%H:%M:%S')} - TRIGGERING FACE & TEXT", flush=True)
             self.set_state(BotStates.SPEAKING, "Playing Voice...")
             self.append_to_text("🔊 [VOICE MESSAGE]")
             
-            # Now wait for the audio to finish
+            # Wait for finish
             play_proc.wait()
+            print(f"[TIMING] Playback finished (Total session: {time.time() - start_time:.2f}s)", flush=True)
             
             self.set_state(BotStates.IDLE, "Ready")
         except Exception as e:
