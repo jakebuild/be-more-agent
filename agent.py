@@ -1654,15 +1654,15 @@ class BotGUI:
             json.dump([full[0]] + conv, f, indent=4)
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Pi Assistant Agent")
+    parser.add_argument("--headless", action="store_true", help="Run without GUI")
+    args = parser.parse_args()
+
     print("--- SYSTEM STARTING ---", flush=True)
     
-    # Check if we can/should run with GUI
-    try:
-        root = tk.Tk()
-        app = BotGUI(root)
-        root.mainloop()
-    except Exception as e:
-        print(f"[INFO] Running in pure CLI mode (No GUI): {e}")
+    if args.headless:
+        print("[INIT] FORCED HEADLESS MODE ACTIVATED", flush=True)
         # Mock root for headless operation
         class MockRoot:
             def __init__(self):
@@ -1670,7 +1670,6 @@ if __name__ == "__main__":
                 self.is_mock = True
             def call(self, *args): pass
             def after(self, ms, func): 
-                # For headless, we just run it in a thread or immediately
                 threading.Thread(target=func, daemon=True).start()
             def title(self, t): pass
             def attributes(self, *args): pass
@@ -1679,6 +1678,32 @@ if __name__ == "__main__":
             def destroy(self): pass
         
         app = BotGUI(MockRoot())
-        # Keep main thread alive
-        while True:
-            time.sleep(1)
+        try:
+            while True: time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n[SHUTDOWN] Headless agent stopped.", flush=True)
+    else:
+        try:
+            root = tk.Tk()
+            app = BotGUI(root)
+            root.mainloop()
+        except Exception as e:
+            print(f"[INFO] GUI failed, falling back to CLI: {e}")
+            class MockRoot:
+                def __init__(self):
+                    self.tk = self
+                    self.is_mock = True
+                def call(self, *args): pass
+                def after(self, ms, func): 
+                    threading.Thread(target=func, daemon=True).start()
+                def title(self, t): pass
+                def attributes(self, *args): pass
+                def bind(self, *args): pass
+                def withdraw(self): pass
+                def destroy(self): pass
+            
+            app = BotGUI(MockRoot())
+            try:
+                while True: time.sleep(1)
+            except KeyboardInterrupt:
+                print("\n[SHUTDOWN] Agent stopped.", flush=True)
