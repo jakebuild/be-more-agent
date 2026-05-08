@@ -625,6 +625,17 @@ class BotGUI:
             print("[TELEGRAM ERROR] Listener thread stopping: Missing Bot Token.", flush=True)
             return
 
+        last_update_id = 0
+        my_id = None
+        
+        # 0. Get our own ID to avoid echoing ourselves
+        try:
+            me_resp = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=5).json()
+            if me_resp.get("ok"):
+                my_id = str(me_resp["result"]["id"])
+                print(f"[TELEGRAM] Bot identified as ID: {my_id}", flush=True)
+        except: pass
+
         # 1. Skip old updates on startup to avoid processing history
         try:
             init_url = f"https://api.telegram.org/bot{token}/getUpdates?limit=1&offset=-1"
@@ -662,6 +673,12 @@ class BotGUI:
                         target_chat_id = str(chat_id)
                         
                         if msg_chat_id != target_chat_id:
+                            continue
+                        
+                        # SKIP messages from ourselves!
+                        sender_id = str(message.get("from", {}).get("id", ""))
+                        if my_id and sender_id == my_id:
+                            print(f"[TELEGRAM DEBUG] Skipping self-message from ID: {sender_id}", flush=True)
                             continue
                             
                         text = message.get("text")
