@@ -680,14 +680,20 @@ class BotGUI:
                         if my_id and sender_id == my_id:
                             continue
                             
-                        text = message.get("text")
+                        # Handle Voice/Audio Responses
+                        voice = message.get("voice") or message.get("audio")
+                        if voice:
+                            print(f"[TELEGRAM] Voice message received, downloading...", flush=True)
+                            self.handle_telegram_voice(voice, token)
+                        
+                        text = message.get("text") or message.get("caption")
                         if text:
                             print(f"[TELEGRAM DEBUG] Message content: '{text[:50]}'", flush=True)
                             self.latest_telegram_response = text
-                            
+                        
                             # Always show the text on screen immediately
                             self.append_to_text(f"{text}")
-                            
+                        
                             # Wake up the main loop if it is waiting
                             if self.current_state == BotStates.THINKING:
                                 self.telegram_response_event.set()
@@ -719,6 +725,34 @@ class BotGUI:
             else:
                 self.overlay_label.place_forget()
         self.master.after(0, _update)
+
+    def handle_telegram_voice(self, voice_data, token):
+        try:
+            file_id = voice_data["file_id"]
+            # 1. Get file path
+            file_info = requests.get(f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}", timeout=10).json()
+            if not file_info.get("ok"): return
+            
+            file_path = file_info["result"]["file_path"]
+            download_url = f"https://api.telegram.org/file/bot{token}/{file_path}"
+            
+            # 2. Download
+            resp = requests.get(download_url, timeout=30)
+            local_path = "response_voice.ogg"
+            with open(local_path, "wb") as f:
+                f.write(resp.content)
+            
+            # 3. Play using ffplay (best for ogg/opus on Pi)
+            print(f"[TELEGRAM] Playing voice response...", flush=True)
+            self.set_state(BotStates.SPEAKING, "Playing Voice...")
+            self.append_to_text("🔊 [VOICE MESSAGE]")
+            
+            # Run in a way that doesn't block the listener too long but plays fully
+            subprocess.run(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", local_path])
+            
+            self.set_state(BotStates.IDLE, "Ready")
+        except Exception as e:
+            print(f"[TELEGRAM ERROR] Failed to play voice: {e}", flush=True)
 
     def append_to_text(self, text, newline=True):
         if not self.master: return
