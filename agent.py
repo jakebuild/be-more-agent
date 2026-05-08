@@ -310,6 +310,7 @@ class BotGUI:
         # Mocks for headless mode
         self.overlay_text = ""
         self.overlay_text_time = 0
+        self.overlay_duration = 5
         self.status_var = type('Mock', (object,), {'set': lambda self, x: None, 'get': lambda self: ""})()
         self.background_label = type('Mock', (object,), {'config': lambda self, **k: None, 'place': lambda self, **k: None, 'place_forget': lambda self: None})()
         self.overlay_label = type('Mock', (object,), {'config': lambda self, **k: None, 'place': lambda self, **k: None, 'place_forget': lambda self: None})()
@@ -523,8 +524,8 @@ class BotGUI:
         img = raw_img.copy()
         
         # --- HOLOGRAPHIC OVERLAY LOGIC ---
-        # If we have text and it's less than 15 seconds old
-        if hasattr(self, 'overlay_text') and self.overlay_text and (time.time() - self.overlay_text_time < 15):
+        # If we have text and it's within its dynamic duration
+        if hasattr(self, 'overlay_text') and self.overlay_text and (time.time() - self.overlay_text_time < self.overlay_duration):
             if self.current_frame_index == 0:
                 print(f"[HUD DEBUG] Rendering holographic text: '{self.overlay_text[:30]}...'", flush=True)
             draw = ImageDraw.Draw(img)
@@ -701,9 +702,18 @@ class BotGUI:
 
     def append_to_text(self, text, newline=True):
         if not self.master: return
-        print(f"[HUD] UPDATE: Displaying message on face screen: '{text[:50]}...'", flush=True)
+        
+        # Dynamic duration: ~3 words per second, minimum 3s, maximum 20s
+        words = text.split()
+        duration = max(3, min(20, len(words) / 3.0))
+        self.overlay_duration = duration
+        
+        print(f"[HUD] UPDATE: Displaying for {duration:.1f}s: '{text[:50]}...'", flush=True)
         self.overlay_text = text
         self.overlay_text_time = time.time()
+        
+        # Automatically go back to IDLE once "speaking" is done
+        self.master.after(int(duration * 1000), lambda: self.set_state(BotStates.IDLE, "Ready") if self.current_state == BotStates.SPEAKING else None)
 
     def _stream_to_text(self, chunk):
         if not self.master: return
