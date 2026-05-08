@@ -664,14 +664,18 @@ class BotGUI:
                             print(f"[TELEGRAM DEBUG] Message content: '{text[:50]}'", flush=True)
                             self.latest_telegram_response = text
                             
-                            # PROACTIVE WAKE: If we are not in a waiting state, show it anyway!
-                            if not self.telegram_response_event.is_set():
-                                print("[TELEGRAM] Proactive wake triggered by new message.", flush=True)
-                                self.set_state(BotStates.SPEAKING, "New Telegram Message")
-                                self.append_to_text(f"{text}")
+                            # Always show the text on screen immediately
+                            self.append_to_text(f"{text}")
                             
-                            self.telegram_response_event.set()
-                            print(f"[TELEGRAM DEBUG] Event SET triggered.", flush=True)
+                            # Wake up the main loop if it is waiting
+                            if self.current_state == BotStates.THINKING:
+                                self.telegram_response_event.set()
+                                print(f"[TELEGRAM DEBUG] Conversation wake-up triggered.", flush=True)
+                            else:
+                                # Just show it and stay ready for the next one
+                                self.set_state(BotStates.SPEAKING, "New Message")
+                                # Clear immediately so the next message isn't blocked
+                                self.telegram_response_event.clear()
                 
             except Exception:
                 pass
