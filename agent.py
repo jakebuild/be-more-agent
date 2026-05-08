@@ -29,10 +29,32 @@ import datetime
 import warnings
 import wave
 import struct 
+import asyncio
+from telethon import TelegramClient, events
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file if it exists
-load_dotenv()
+# Load .env
+def load_dotenv_custom():
+    # Try .env first
+    env_path = Path(".env")
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    os.environ[k] = v.strip('"').strip("'")
+    
+    # Try ~/.secrets as requested
+    secrets_path = Path.home() / ".secrets"
+    if secrets_path.exists():
+        with open(secrets_path) as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    os.environ[k] = v.strip('"').strip("'")
+
+load_dotenv_custom()
 
 # Suppress harmless library warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_search")
@@ -569,144 +591,102 @@ class BotGUI:
     def start_telegram_listener(self):
         with self.telegram_lock:
             if self.telegram_thread is None or not self.telegram_thread.is_alive():
-                print("[TELEGRAM] Starting Listener Thread...", flush=True)
-                self.telegram_thread = threading.Thread(target=self.telegram_listener_loop, daemon=True)
+                print("[TELEGRAM] Starting Telethon User Client...", flush=True)
+                self.telegram_thread = threading.Thread(target=self.telegram_client_thread, daemon=True)
                 self.telegram_thread.start()
-            else:
-                print("[TELEGRAM DEBUG] Listener thread already running.", flush=True)
+
+    def telegram_client_thread(self):
+        """Dedicated thread for the Telethon asyncio loop"""
+        api_id = os.getenv("TELEGRAM_APP_ID")
+        api_hash = os.getenv("TELEGRAM_APP_HASH")
+        bot_username = os.getenv("TELEGRAM_MENTION", "").replace("@", "")
+        
+        if not api_id or not api_hash:
+            print("[TELEGRAM ERROR] Missing API_ID or API_HASH in .env or ~/.secrets", flush=True)
+            return
+
+        self.client_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.client_loop)
+        
+        client = TelegramClient('pi_session', api_id, api_hash, loop=self.client_loop)
+        self.telethon_client = client
+
+        @client.on(events.NewMessage(incoming=True))
+        async def handler(event):
+            # Only listen to the target bot
+            sender = await event.get_sender()
+            sender_username = getattr(sender, 'username', '')
+            
+            if sender_username and bot_username in sender_username:
+                print(f"[TELEGRAM] Received message from {sender_username}", flush=True)
+                
+                # Handle Voice
+                if event.voice or event.audio:
+                    print(f"[TELEGRAM] Voice received, downloading...", flush=True)
+                    path = await event.download_media("response_voice.ogg")
+                    # Play it (synchronous call for now or run in executor)
+                    self.handle_telegram_voice_local(path)
+                
+                # Handle Text
+                if event.text:
+                    text = event.text
+                    print(f"[TELEGRAM DEBUG] Content: {text[:50]}...", flush=True)
+                    self.latest_telegram_response = text
+                    self.append_to_text(text)
+                    
+                    if self.current_state == BotStates.THINKING:
+                        self.telegram_response_event.set()
+
+        print("[TELEGRAM] Connecting to Telegram as User...", flush=True)
+        try:
+            client.start() # This might be interactive on first run!
+            print("[TELEGRAM] Client ONLINE.", flush=True)
+            client.run_until_disconnected()
+        except Exception as e:
+            print(f"[TELEGRAM ERROR] Client crash: {e}", flush=True)
+
+    def handle_telegram_voice_local(self, local_path):
+        # Re-use existing logic but adapted for local file
+        try:
+            print(f"[TIMING] Starting voice playback of {local_path}...", flush=True)
+            play_proc = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", local_path])
+            time.sleep(1.3)
+            self.set_state(BotStates.SPEAKING, "Playing Voice...")
+            self.append_to_text("🔊 [VOICE MESSAGE]")
+            play_proc.wait()
+            self.set_state(BotStates.IDLE, "Ready")
+        except Exception as e:
+            print(f"[ERROR] Local voice play failed: {e}", flush=True)
 
     def send_voice_to_telegram(self, file_path):
-        token = CURRENT_CONFIG["telegram"].get("bot_token")
-        chat_id = CURRENT_CONFIG["telegram"].get("channel_id")
-        if not token or not chat_id:
-            print("[TELEGRAM ERROR] Bot Token or Chat ID missing!", flush=True)
+        bot_username = os.getenv("TELEGRAM_MENTION", "").replace("@", "")
+        if not self.telethon_client or not bot_username:
             return False
             
-        url = f"https://api.telegram.org/bot{token}/sendVoice"
         try:
-            with open(file_path, 'rb') as f:
-                mention = CURRENT_CONFIG["telegram"].get("mention", "")
-                files = {'voice': f}
-                data = {'chat_id': chat_id}
-                if mention:
-                    data['caption'] = mention
-                    
-                response = requests.post(url, files=files, data=data, timeout=15)
-                response.raise_for_status()
-                return True
+            asyncio.run_coroutine_threadsafe(
+                self.telethon_client.send_file(bot_username, file_path),
+                self.client_loop
+            )
+            return True
         except Exception as e:
-            print(f"[TELEGRAM ERROR] Failed to send voice: {e}", flush=True)
+            print(f"[TELEGRAM ERROR] Send voice failed: {e}", flush=True)
             return False
 
     def send_text_to_telegram(self, text):
-        token = CURRENT_CONFIG["telegram"].get("bot_token")
-        chat_id = CURRENT_CONFIG["telegram"].get("channel_id")
-        if not token or not chat_id:
-            print("[TELEGRAM ERROR] Bot Token or Chat ID missing!", flush=True)
+        bot_username = os.getenv("TELEGRAM_MENTION", "").replace("@", "")
+        if not self.telethon_client or not bot_username:
             return False
             
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
         try:
-            mention = CURRENT_CONFIG["telegram"].get("mention", "")
-            full_text = f"{mention} {text}" if mention else text
-            
-            data = {'chat_id': chat_id, 'text': full_text}
-            response = requests.post(url, data=data, timeout=15)
-            response.raise_for_status()
+            asyncio.run_coroutine_threadsafe(
+                self.telethon_client.send_message(bot_username, text),
+                self.client_loop
+            )
             return True
         except Exception as e:
-            print(f"[TELEGRAM ERROR] Failed to send text: {e}", flush=True)
+            print(f"[TELEGRAM ERROR] Send text failed: {e}", flush=True)
             return False
-
-    def telegram_listener_loop(self):
-        token = CURRENT_CONFIG["telegram"].get("bot_token")
-        chat_id = CURRENT_CONFIG["telegram"].get("channel_id")
-        if not token:
-            print("[TELEGRAM ERROR] Listener thread stopping: Missing Bot Token.", flush=True)
-            return
-
-        last_update_id = 0
-        my_id = None
-        
-        # 0. Get our own ID to avoid echoing ourselves
-        try:
-            me_resp = requests.get(f"https://api.telegram.org/bot{token}/getMe", timeout=5).json()
-            if me_resp.get("ok"):
-                my_id = str(me_resp["result"]["id"])
-                print(f"[TELEGRAM] Bot identified as ID: {my_id}", flush=True)
-        except: pass
-
-        # 1. Skip old updates on startup to avoid processing history
-        try:
-            init_url = f"https://api.telegram.org/bot{token}/getUpdates?limit=1&offset=-1"
-            init_resp = requests.get(init_url, timeout=5).json()
-            if init_resp.get("ok") and init_resp.get("result"):
-                last_update_id = init_resp["result"][0]["update_id"]
-                print(f"[TELEGRAM] Synced to latest update ID: {last_update_id}", flush=True)
-            else:
-                last_update_id = 0
-        except Exception as e:
-            print(f"[TELEGRAM WARNING] Could not sync updates: {e}", flush=True)
-            last_update_id = 0
-
-        if chat_id:
-            print(f"[TELEGRAM] Monitoring channel {chat_id}...", flush=True)
-        else:
-            print("[TELEGRAM] Monitoring for ANY message to find Channel ID...", flush=True)
-        
-        while not self.exiting:
-            try:
-                # 2. Faster polling (2s timeout)
-                url = f"https://api.telegram.org/bot{token}/getUpdates?offset={last_update_id + 1}&timeout=2"
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200:
-                    updates = response.json().get("result", [])
-                    for update in updates:
-                        last_update_id = update["update_id"]
-                        # Channels use 'channel_post', groups/private use 'message'
-                        message = update.get("message", {}) or update.get("channel_post", {})
-                        if not message: continue
-                        
-                        # Verify chat ID match (handling potential int/str mismatch)
-                        msg_chat_id = str(message.get("chat", {}).get("id", ""))
-                        target_chat_id = str(chat_id)
-                        
-                        if msg_chat_id != target_chat_id:
-                            continue
-                        
-                        # SKIP messages from ourselves!
-                        # In channels, 'from' might be missing, we use 'author_signature' or 'sender_chat'
-                        sender_id = str(message.get("from", {}).get("id", ""))
-                        if my_id and sender_id == my_id:
-                            continue
-                            
-                        # Handle Voice/Audio Responses
-                        voice = message.get("voice") or message.get("audio")
-                        if voice:
-                            print(f"[TELEGRAM] Voice message received, downloading...", flush=True)
-                            self.handle_telegram_voice(voice, token)
-                        
-                        text = message.get("text") or message.get("caption")
-                        if text:
-                            print(f"[TELEGRAM DEBUG] Message content: '{text[:50]}'", flush=True)
-                            self.latest_telegram_response = text
-                        
-                            # Always show the text on screen immediately
-                            self.append_to_text(f"{text}")
-                        
-                            # Wake up the main loop if it is waiting
-                            if self.current_state == BotStates.THINKING:
-                                self.telegram_response_event.set()
-                                print(f"[TELEGRAM DEBUG] Conversation wake-up triggered.", flush=True)
-                            else:
-                                # Just show it and stay ready for the next one
-                                self.set_state(BotStates.SPEAKING, "New Message")
-                                # Clear immediately so the next message isn't blocked
-                                self.telegram_response_event.clear()
-                
-            except Exception:
-                pass
-            time.sleep(1)
 
     def set_state(self, state, msg="", cam_path=None):
         def _update():
