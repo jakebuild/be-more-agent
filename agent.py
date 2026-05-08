@@ -521,6 +521,8 @@ class BotGUI:
         # --- HOLOGRAPHIC OVERLAY LOGIC ---
         # If we have text and it's less than 15 seconds old
         if hasattr(self, 'overlay_text') and self.overlay_text and (time.time() - self.overlay_text_time < 15):
+            if self.current_frame_index == 0:
+                print(f"[HUD DEBUG] Rendering holographic text: '{self.overlay_text[:30]}...'", flush=True)
             draw = ImageDraw.Draw(img)
             
             # Try to load a nice font, fallback to default
@@ -691,7 +693,7 @@ class BotGUI:
 
     def append_to_text(self, text, newline=True):
         if not self.master: return
-        print(f"[HUD] Showing: {text}", flush=True)
+        print(f"[HUD] UPDATE: Displaying message on face screen: '{text[:50]}...'", flush=True)
         self.overlay_text = text
         self.overlay_text_time = time.time()
 
