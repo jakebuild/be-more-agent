@@ -747,13 +747,18 @@ class BotGUI:
             with open(local_path, "wb") as f:
                 f.write(resp.content)
             
-            # 3. Download finished! Now switch to speaking and play
-            print(f"[TELEGRAM] Download finished. Playing voice response...", flush=True)
+            # 3. Download finished! Now start playback and state simultaneously
+            print(f"[TELEGRAM] Download finished. Starting voice playback...", flush=True)
+            
+            # Start ffplay in background to minimize latency
+            play_proc = subprocess.Popen(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", local_path])
+            
+            # Immediately trigger GUI state
             self.set_state(BotStates.SPEAKING, "Playing Voice...")
             self.append_to_text("🔊 [VOICE MESSAGE]")
             
-            # Run ffplay
-            subprocess.run(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", local_path])
+            # Now wait for the audio to finish
+            play_proc.wait()
             
             self.set_state(BotStates.IDLE, "Ready")
         except Exception as e:
