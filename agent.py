@@ -383,8 +383,11 @@ class BotGUI:
             self.overlay_label = tk.Label(master, bg='black')
             self.overlay_label.bind('<Button-1>', self.toggle_hud_visibility)
             
-            self.response_text = tk.Text(master, height=6, width=60, wrap=tk.WORD, 
-                                         state=tk.DISABLED, bg="#ffffff", fg="#000000", font=('Arial', 12)) 
+            # Premium Dark Mode Text Display
+            self.response_text = tk.Text(master, height=4, width=45, wrap=tk.WORD, 
+                                         state=tk.DISABLED, bg="#121212", fg="#00ffcc", 
+                                         font=('Outfit', 22, 'bold'), bd=0, padx=25, pady=25) 
+            self.response_text.tag_configure("center", justify='center')
             
             self.status_var = tk.StringVar(value="Initializing...")
             self.status_label = ttk.Label(master, textvariable=self.status_var, background="#2e2e2e", foreground="white")
@@ -442,14 +445,15 @@ class BotGUI:
         self.master.attributes('-fullscreen', False)
         self.safe_exit()
 
-    def toggle_hud_visibility(self, event=None):
+    def toggle_hud_visibility(self, event=None, show_only=False):
         try:
-            if self.response_text.winfo_ismapped():
+            if self.response_text.winfo_ismapped() and not show_only:
                 self.response_text.place_forget()
                 self.status_label.place_forget()
                 self.exit_button.place_forget()
             else:
-                self.response_text.place(relx=0.5, rely=0.82, anchor=tk.S)
+                # Place with a nice overlay effect at the bottom
+                self.response_text.place(relx=0.5, rely=0.9, anchor=tk.S, relwidth=0.9)
                 self.status_label.place(relx=0.5, rely=1.0, anchor=tk.S, relwidth=1)
                 self.exit_button.place(x=10, y=10)
         except tk.TclError: pass
@@ -645,14 +649,20 @@ class BotGUI:
     def append_to_text(self, text, newline=True):
         if not self.master: return
         def _update():
+            # Auto-show the HUD when new text arrives
+            self.toggle_hud_visibility(show_only=True)
+            
             self.response_text.config(state=tk.NORMAL)
             if newline: 
-                self.response_text.insert(tk.END, text + "\n")
+                self.response_text.insert(tk.END, text + "\n", "center")
             else: 
-                self.response_text.insert(tk.END, text)
+                self.response_text.insert(tk.END, text, "center")
             
             self.response_text.see(tk.END)
             self.response_text.config(state=tk.DISABLED)
+            
+            # Auto-hide after 15 seconds of inactivity
+            self.master.after(15000, lambda: self.response_text.place_forget() if self.response_text else None)
             
         self.master.after(0, _update)
 
