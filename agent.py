@@ -665,20 +665,19 @@ class BotGUI:
                         last_update_id = update["update_id"]
                         # Channels use 'channel_post', groups/private use 'message'
                         message = update.get("message", {}) or update.get("channel_post", {})
+                        if not message: continue
                         
                         # Verify chat ID match (handling potential int/str mismatch)
                         msg_chat_id = str(message.get("chat", {}).get("id", ""))
-                        print(f"[TELEGRAM DEBUG] Observed Message from Chat ID: {msg_chat_id}", flush=True)
-                        
                         target_chat_id = str(chat_id)
                         
                         if msg_chat_id != target_chat_id:
                             continue
                         
                         # SKIP messages from ourselves!
+                        # In channels, 'from' might be missing, we use 'author_signature' or 'sender_chat'
                         sender_id = str(message.get("from", {}).get("id", ""))
                         if my_id and sender_id == my_id:
-                            print(f"[TELEGRAM DEBUG] Skipping self-message from ID: {sender_id}", flush=True)
                             continue
                             
                         text = message.get("text")
