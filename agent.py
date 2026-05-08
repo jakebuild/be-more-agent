@@ -383,10 +383,11 @@ class BotGUI:
             self.overlay_label = tk.Label(master, bg='black')
             self.overlay_label.bind('<Button-1>', self.toggle_hud_visibility)
             
-            # Premium Dark Mode Text Display
+            # Cyber-Glass Transparent Look
             self.response_text = tk.Text(master, height=4, width=45, wrap=tk.WORD, 
-                                         state=tk.DISABLED, bg="#121212", fg="#00ffcc", 
-                                         font=('Outfit', 22, 'bold'), bd=0, padx=25, pady=25) 
+                                         state=tk.DISABLED, bg="#050505", fg="#00ffcc", 
+                                         font=('Outfit', 22, 'bold'), bd=0, padx=25, pady=25,
+                                         highlightthickness=0, relief='flat') 
             self.response_text.tag_configure("center", justify='center')
             
             self.status_var = tk.StringVar(value="Initializing...")
@@ -621,6 +622,13 @@ class BotGUI:
                         if text:
                             print(f"[TELEGRAM DEBUG] Message content: '{text[:50]}'", flush=True)
                             self.latest_telegram_response = text
+                            
+                            # PROACTIVE WAKE: If we are not in a waiting state, show it anyway!
+                            if not self.telegram_response_event.is_set():
+                                print("[TELEGRAM] Proactive wake triggered by new message.", flush=True)
+                                self.set_state(BotStates.SPEAKING, "New Telegram Message")
+                                self.append_to_text(f"{text}")
+                            
                             self.telegram_response_event.set()
                             print(f"[TELEGRAM DEBUG] Event SET triggered.", flush=True)
                 
